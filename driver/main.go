@@ -1,14 +1,20 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/google/gousb"
 )
 
 func main() {
+	stage1 := flag.Bool("stage1", false, "USB mode")
+	stage2 := flag.Bool("stage2", false, "FPGA mode and run time")
+	flag.Parse()
+
 	ctx := gousb.NewContext()
 	defer ctx.Close()
 
@@ -21,24 +27,6 @@ func main() {
 	defer dev.Close()
 
 	log.Printf("Claim default interface...")
-
-	// Claim the default interface using a convenience function.
-	// The default interface is always #0 alt #0 in the currently active
-	// config.
-
-	// intf, done, err := dev.DefaultInterface()
-	// if err != nil {
-	// 	log.Fatalf("%s.DefaultInterface(): %v", dev, err)
-	// }
-	// defer done()
-	// intf.String()
-
-	// log.Printf("Grapping endpoint to bitstream FPGA...")
-	// bitStreamEndpoint, err := intf.OutEndpoint(0)
-	// if err != nil {
-	// 	log.Printf("Failed to open bitstreaming endpoint to upload firmware to. %v \n %s", intf, err.Error())
-	// 	return
-	// }
 
 	deviceConfig, err := dev.Config(1)
 	if err != nil {
@@ -58,18 +46,59 @@ func main() {
 	}
 
 	// dev.ControlTimeout = time.Second
+	if *stage1 {
+		log.Printf("Setting the USB Controller firmware I think...")
 
-	log.Printf("Putting the device in programming mode I think?")
+		for n, packet := range usbInit {
+			if n%10 == 0 {
+				thrd := len(usbInit) / 3
+				switch n / thrd {
+				case 0:
+					fmt.Print("U")
+				case 1:
+					fmt.Print("S")
+				case 2:
+					fmt.Print("B")
+				}
+			}
 
-	fmt.Print("US")
-	for _, packet := range usbInit {
-		_, err = dev.Control(packet.RequestType, packet.BRequest, packet.WValue, packet.WIndex, packet.Data)
-		if err != nil {
-			log.Printf("\nfailed to bitstream %s", err.Error())
+			_, err = dev.Control(packet.RequestType, packet.BRequest, packet.WValue, packet.WIndex, packet.Data)
+			if err != nil {
+				log.Printf("\nfailed to bitstream %s", err.Error())
+			}
 		}
 
-		// bitStreamEndpoint.Write(buf[:n])
-		fmt.Print("B")
+		time.Sleep(time.Second)
+		os.Exit(0)
+	} else if *stage2 {
+		buf := make([]byte, 64)
+		_, err = dev.Control(0xc0, 185, 0x0021, 0, buf)
+
+		log.Printf("Setting the FPGA bitstream I think...")
+
+		for n, packet := range fpgaInit {
+			if n%60 == 0 {
+				thrd := len(fpgaInit) / 4
+				switch n / thrd {
+				case 0:
+					fmt.Print("F")
+				case 1:
+					fmt.Print("P")
+				case 2:
+					fmt.Print("G")
+				case 3:
+					fmt.Print("A")
+				}
+			}
+
+			_, err = dev.Control(packet.RequestType, packet.BRequest, packet.WValue, packet.WIndex, packet.Data)
+			if err != nil {
+				log.Printf("\nfailed to bitstream %s", err.Error())
+			}
+		}
+
+	} else {
+		log.Fatalf("Set a -stage1 or -stage2")
 	}
 
 	time.Sleep(time.Hour)
