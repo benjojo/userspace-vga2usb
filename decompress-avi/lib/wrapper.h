@@ -1,0 +1,1 @@
+extern int decompress_frames(int framel, char* blob, char* deblob);
