@@ -1,11 +1,7 @@
 package main
 
-/*
-#include <lib/v2u_compression.h>
-#include <lib/wrapper.h>
-#cgo CFLAGS: -g -I ./ -I ./lib/
-#cgo LDFLAGS: -L lib/ -lfrmgrab -L. -llib
-*/
+// #cgo LDFLAGS: -lm
+// extern int decompress_frames(int framel, char* blob, char* deblob);
 import "C"
 import (
 	"bytes"
@@ -19,5 +15,3 @@ func main() {
 
 	i := C.decompress_frames(C.int(buf.Len()), unsafe.Pointer(&b[0]), unsafe.Pointer(&b[0]))
 }
-
-//

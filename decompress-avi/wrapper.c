@@ -1,9 +1,5 @@
-#include "v2u_lib.h"
-#include "v2u_compression.h"
-
-
-#include "wrapper.h"
-
+#include "include/v2u_lib.h"
+#include "include/v2u_compression.h"
 
 #include <stdlib.h>
 #include <string.h>
