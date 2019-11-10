@@ -3,6 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"log"
 	"os"
 	"time"
@@ -101,8 +104,32 @@ func main() {
 		log.Fatalf("Set a -stage1 or -stage2")
 	}
 
+	fmt.Print("\r\n")
 	log.Printf("Activating in 2 seconds")
 	time.Sleep(time.Second * 2)
+
+	log.Printf("Setting FPGA registers I think?...")
+
+	for n, packet := range frameSetup {
+		if n%60 == 0 {
+			thrd := len(frameSetup) / 4
+			switch n / thrd {
+			case 0:
+				fmt.Print("W")
+			case 1:
+				fmt.Print("O")
+			case 2:
+				fmt.Print("R")
+			case 3:
+				fmt.Print("K")
+			}
+		}
+
+		_, err = dev.Control(packet.RequestType, packet.BRequest, packet.WValue, packet.WIndex, packet.Data)
+		if err != nil {
+			log.Printf("\nfailed to setup device %s", err.Error())
+		}
+	}
 
 	//  unable to grab default interface:
 	// vid=5555,pid=3382,bus=3,addr=63,config=1,if=0,alt=0
@@ -134,9 +161,9 @@ func main() {
 
 	fmt.Print("Endpoint: ")
 
-	buf := make([]byte, 39)
-	_, err = dev.Control(0x40, 176, 0, 0, buf)
-	fmt.Print("Null 39 Control: ")
+	// buf := make([]byte, 39)
+	// _, err = dev.Control(0x40, 176, 0, 0, buf)
+	// fmt.Print("Null 39 Control: ")
 
 	inBuf := make([]byte, 12)
 	_, err = dev.Control(0xc0, 177, 0, 0, inBuf)
@@ -146,32 +173,84 @@ func main() {
 
 	// now to send what i think activates this
 
-	go func() {
-
-		for {
-			dev.Control(0x40, 176, 0, 0, []byte("\x04\x10\x00\x00\x10\x14\x10\xaa\xaa\xaa\x1f\x1f\x1f\x03\x03\x20\x02\x58\x00\x01\x02\x58\x00\x7c\x19\x01\x01\x80\x80\x00\x00\x00\x00\x00\x00\x03\x20\x02\x58"))
-			time.Sleep(time.Millisecond * 200)
-			dev.Control(0x40, 184, 0x0076, 0, []byte(""))
-		}
-
-	}()
-
 	f, _ := os.Create("./debug")
-
 	bytesRead := 0
+
+	//                                  "\x04\x10\x00\x00\x08\x14\x04\x9e\x9f\x9e\x1f\x1f\x1f\x03\x03\x20\x00\xc8\x00\x01\x00\xc8\x00\x98\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x00\xc8"
+	//	                                "\x04\x10\x00\x00\x08\x14\x04\x9b\x9e\x9e\x1f\x1f\x1f\x03\x03\x20\x02\x58\x00\x01\x02\x58\x00\x7c\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x02\x58"
+	dev.Control(0x40, 176, 0, 0, []byte("\x04\x10\x00\x00\x08\x14\x1c\x90\x91\x91\x1f\x1f\x1f\x03\x03\x20\x02\x58\x00\x01\x02\x58\x00\x7c\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x02\x58"))
+	dev.Control(0x40, 184, 0x0076, 0, []byte(""))
+
+	PayloadB2 := make([]byte, 0)
+
 	for {
 		dataBuf := make([]byte, 61440*6)
 		n, err := inputTest.Read(dataBuf)
+
 		if err != nil {
 			log.Printf("failed to read aa %s", err)
-			continue
+			// continue
 		}
 
 		bytesRead += n
 
 		f.Write(dataBuf[:n])
+		tmp := dataBuf[:n]
+		PayloadB2 = append(PayloadB2, tmp...)
 		fmt.Printf("\rBytes Read: %d   ", bytesRead)
+		if bytesRead == 1449482 {
+			break
+		}
 	}
+
+	// Now a vauge attempt to reconstruct into a image?
+
+	PayloadB := PayloadB2[4:]
+	img := image.NewNRGBA(image.Rect(0, 0, 800, 600))
+	log.Printf("len= %d vs %d", len(PayloadB), 800*600)
+	x, y := 0, 0
+
+	for n := 0; n < len(PayloadB); n = n + 3 {
+		if n+3 > len(PayloadB) {
+			break
+		}
+
+		// for i := 0; i < 3; i++ {
+		img.Set(x, y, color.NRGBA{
+			R: PayloadB[n],
+			G: PayloadB[n+1],
+			B: PayloadB[n+2],
+			A: 255,
+		})
+		x++
+		if x == 799 {
+			x = 0
+			y++
+		}
+	}
+	// for n, _ := range PayloadB {
+	// if n == len(PayloadB)-3 {
+	// 	break
+	// }
+
+	// // for i := 0; i < 3; i++ {
+	// img.Set(x, y, color.NRGBA{
+	// 	R: PayloadB[n],
+	// 	G: PayloadB[n+1],
+	// 	B: PayloadB[n+2],
+	// 	A: 255,
+	// })
+	// x++
+	// if x == 799 {
+	// 	x = 0
+	// 	y++
+	// }
+	// // }
+
+	// }
+
+	a, _ := os.Create("lol.png")
+	png.Encode(a, img)
 
 	time.Sleep(time.Hour)
 
