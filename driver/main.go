@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"log"
 	"os"
@@ -16,6 +17,9 @@ import (
 func main() {
 	stage1 := flag.Bool("stage1", false, "USB mode")
 	stage2 := flag.Bool("stage2", false, "FPGA mode and run time")
+	resMode := flag.Int("resMode", 1, "1: 800*600, 2: 1024x768, 3: 1280x720")
+	fps := flag.Int("fps", 2, "FPS you want to try and capture at")
+	mjpegMode := flag.Bool("mjpeg", false, "output MJPEG so it can be processed by another program")
 	flag.Parse()
 
 	ctx := gousb.NewContext()
@@ -38,17 +42,16 @@ func main() {
 	}
 
 	for num, interf := range deviceConfig.Desc.Interfaces {
-		fmt.Printf("\tINTERFACE #%d\n", num)
+		os.Stderr.WriteString(fmt.Sprintf("\tINTERFACE #%d\n", num))
 
 		for numAlt, altset := range interf.AltSettings {
-			fmt.Printf("\t\t%d - Number: %d - Alt %d\n", numAlt, altset.Number, altset.Alternate)
+			os.Stderr.WriteString(fmt.Sprintf("\t\t%d - Number: %d - Alt %d\n", numAlt, altset.Number, altset.Alternate))
 			for numEndpoint, endpointset := range altset.Endpoints {
-				fmt.Printf("\t\t\t%d - %#v\n", numEndpoint, endpointset)
+				os.Stderr.WriteString(fmt.Sprintf("\t\t\t%d - %#v\n", numEndpoint, endpointset))
 			}
 		}
 	}
 
-	// dev.ControlTimeout = time.Second
 	if *stage1 {
 		log.Printf("Setting the USB Controller firmware I think...")
 
@@ -57,11 +60,11 @@ func main() {
 				thrd := len(usbInit) / 3
 				switch n / thrd {
 				case 0:
-					fmt.Print("U")
+					os.Stderr.WriteString(fmt.Sprintf("U"))
 				case 1:
-					fmt.Print("S")
+					os.Stderr.WriteString(fmt.Sprintf("S"))
 				case 2:
-					fmt.Print("B")
+					os.Stderr.WriteString(fmt.Sprintf("B"))
 				}
 			}
 
@@ -93,13 +96,13 @@ func main() {
 					thrd := len(fpgaInit) / 4
 					switch n / thrd {
 					case 0:
-						fmt.Print("F")
+						os.Stderr.WriteString(fmt.Sprintf("F"))
 					case 1:
-						fmt.Print("P")
+						os.Stderr.WriteString(fmt.Sprintf("P"))
 					case 2:
-						fmt.Print("G")
+						os.Stderr.WriteString(fmt.Sprintf("G"))
 					case 3:
-						fmt.Print("A")
+						os.Stderr.WriteString(fmt.Sprintf("A"))
 					}
 				}
 
@@ -114,7 +117,7 @@ func main() {
 		log.Fatalf("Set a -stage1 or -stage2")
 	}
 
-	fmt.Print("\r\n")
+	os.Stderr.WriteString(fmt.Sprintf("\r\n"))
 	log.Printf("Activating in 2 seconds")
 	time.Sleep(time.Second * 2)
 
@@ -125,13 +128,13 @@ func main() {
 			thrd := len(frameSetup) / 4
 			switch n / thrd {
 			case 0:
-				fmt.Print("W")
+				os.Stderr.WriteString(fmt.Sprintf("W"))
 			case 1:
-				fmt.Print("O")
+				os.Stderr.WriteString(fmt.Sprintf("O"))
 			case 2:
-				fmt.Print("R")
+				os.Stderr.WriteString(fmt.Sprintf("R"))
 			case 3:
-				fmt.Print("K")
+				os.Stderr.WriteString(fmt.Sprintf("K"))
 			}
 		}
 
@@ -141,61 +144,50 @@ func main() {
 		}
 	}
 
-	//  unable to grab default interface:
-	// vid=5555,pid=3382,bus=3,addr=63,config=1,if=0,alt=0
-	// does not have endpoint with address 0x80.
-	// Available endpoints: [0x82(2,IN)]
-
 	cfg, err := dev.Config(1)
 	if err != nil {
 		log.Fatalf("Kaboom, unable to grab Config(1): %s", err.Error())
 	}
-	fmt.Print("Config: ")
+	os.Stderr.WriteString(fmt.Sprintf("Config: "))
 
 	defaultinterface, err := cfg.Interface(0, 0)
 	if err != nil {
 		log.Fatalf("Kaboom, unable to grab Interface(0, 0): %s", err.Error())
 	}
-	fmt.Print("Interface: ")
-
-	// defaultInterface, done, err := dev.DefaultInterface()
-	// defer done()
-	// if err != nil {
-	// 	log.Fatalf("Kaboom, unable to grab default interface: %s", err.Error())
-	// }
+	os.Stderr.WriteString(fmt.Sprintf("Interface: "))
 
 	inputTest, err := defaultinterface.InEndpoint(2)
 	if err != nil {
 		log.Fatalf("Kaboom, unable to grab default interface: %s", err.Error())
 	}
 
-	fmt.Print("Endpoint: ")
-
-	// buf := make([]byte, 39)
-	// _, err = dev.Control(0x40, 176, 0, 0, buf)
-	// fmt.Print("Null 39 Control: ")
+	os.Stderr.WriteString(fmt.Sprintf("Endpoint: "))
 
 	inBuf := make([]byte, 12)
 	_, err = dev.Control(0xc0, 177, 0, 0, inBuf)
-	fmt.Print("Grab In 12 Control: \n")
+	os.Stderr.WriteString(fmt.Sprintf("Grab In 12 Control: \n"))
 
 	log.Printf("Here is a blob that I don't know what it does %x", inBuf)
 
 	// now to send what i think activates this
 
 	bytesRead := 0
-
-	//                                  "\x04\x10\x00\x00\x08\x14\x04\x9e\x9f\x9e\x1f\x1f\x1f\x03\x03\x20\x00\xc8\x00\x01\x00\xc8\x00\x98\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x00\xc8"
-	//	                                "\x04\x10\x00\x00\x08\x14\x04\x9b\x9e\x9e\x1f\x1f\x1f\x03\x03\x20\x02\x58\x00\x01\x02\x58\x00\x7c\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x02\x58"
-
-	// dev.Control(0x40, 176, 0, 0, []byte("\x04\x10\x00\x00\x08\x14\x1c\xba\xba\xbb\x1f\x1f\x1f\x03\x03\x20\x02\x58\x00\x01\x02\x58\x00\x98\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x02\x58"))
 	frameRequest := make(chan bool)
-	frameOutput := make(chan ReadSkipper)
+	frameOutput := make(chan ReadSkipper, 1)
 	go func() {
 		for {
 			<-frameRequest
 
-			dev.Control(0x40, 176, 0, 0, []byte("\x04\x10\x00\x00\x08\x14\x1c\x90\x91\x91\x1f\x1f\x1f\x03\x03\x20\x02\x58\x00\x01\x02\x58\x00\x7c\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x02\x58"))
+			if *resMode == 3 {
+				// 1280x720
+				dev.Control(0x40, 176, 0, 0, []byte("\x06\x80\x00\x00\x08\x14\x08\xb9\xbc\xbb\x1f\x1f\x1f\x03\x05\x00\x02\xd0\x00\x01\x02\xd0\x00\xe0\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x05\x00\x02\xd0"))
+			} else if *resMode == 2 {
+				// 1024x768
+				dev.Control(0x40, 176, 0, 0, []byte("\x05\x40\x00\x00\x08\x14\x08\xbb\xbc\xbb\x1f\x1f\x1f\x03\x04\x00\x03\x00\x00\x01\x03\x00\x00\xa4\x22\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x04\x00\x03\x00"))
+			} else {
+				// 800x600
+				dev.Control(0x40, 176, 0, 0, []byte("\x04\x10\x00\x00\x08\x14\x1c\x90\x91\x91\x1f\x1f\x1f\x03\x03\x20\x02\x58\x00\x01\x02\x58\x00\x7c\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x02\x58"))
+			}
 			dev.Control(0x40, 184, 0x0076, 0, []byte(""))
 
 			dataBuf := make([]byte, 1280*1024*4)
@@ -210,17 +202,21 @@ func main() {
 
 			f, _ := os.Create("./debug")
 			f.Write(dataBuf[:n])
-			fmt.Printf("N=%d\n", n)
+			// os.Stderr.WriteString(fmt.Sprintf("N=%d\n", n))
 
 			rSk := ReadSkipper{
 				Data:  dataBuf[:n],
 				Bread: 4,
 			}
-			fmt.Printf("Best Guess %#v\n", GuessTheRes(n))
+			// log.Printf("Best Guess %#v\n", GuessTheRes(n))
 			frameOutput <- rSk
 
 		}
 	}()
+
+	if *mjpegMode {
+		os.Stdout.WriteString("--myboundary\nContent-Type: image/jpeg\n\n")
+	}
 
 	go func() {
 		for {
@@ -228,13 +224,7 @@ func main() {
 
 			Res := GuessTheRes(len(rSk.Data))
 			img := image.NewNRGBA(image.Rect(0, 0, Res.X, Res.Y))
-			// log.Printf("len= %d vs %d", len(PayloadB), 800*600)
 			x, y := 0, 0
-			// debugf, _ := os.Create("debug-hex")
-			// rSk := ReadSkipper{
-			// 	Data:  PayloadB,
-			// 	Bread: 4,
-			// }
 
 			bench := time.Now()
 
@@ -249,8 +239,6 @@ func main() {
 					A: 255,
 				})
 
-				// debugf.WriteString(fmt.Sprintf("%d: %02x %02x %02x \n", y, RGB[0], RGB[1], RGB[2]))
-
 				x++
 				if x == Res.X {
 					x = 0
@@ -263,61 +251,26 @@ func main() {
 
 			log.Printf("took %s to process that", time.Since(bench).String())
 
-			a, _ := os.Create(fmt.Sprintf("%d.png", time.Now().Unix()))
-			png.Encode(a, img)
+			if !*mjpegMode {
+				a, _ := os.Create(fmt.Sprintf("%d.png", time.Now().Unix()))
+				png.Encode(a, img)
+				continue
+			}
+
+			// MJPEG mode.
+			// Mostly stolen from how I did it back in the days of de-ip-hdmi
+			// https://github.com/benjojo/de-ip-hdmi/blob/master/main.go
+
+			os.Stdout.WriteString("\n--myboundary\nContent-Type: image/jpeg\n\n")
+			jpeg.Encode(os.Stdout, img, nil)
+
 		}
 	}()
 
 	for {
-		time.Sleep(time.Second)
+		time.Sleep(time.Second / time.Duration(*fps))
 		frameRequest <- true
 	}
-
-	// Now a vauge attempt to reconstruct into a image?
-	// 01 30 01 00
-	// PayloadB := PayloadB2
-	// img := image.NewNRGBA(image.Rect(0, 0, 800, 600))
-	// log.Printf("len= %d vs %d", len(PayloadB), 800*600)
-	// x, y := 0, 0
-	// // debugf, _ := os.Create("debug-hex")
-	// rSk := ReadSkipper{
-	// 	Data:  PayloadB,
-	// 	Bread: 4,
-	// }
-
-	// bench := time.Now()
-
-	// for {
-
-	// 	RGB := rSk.ReadPixel()
-	// 	R, G, B := color.YCbCrToRGB(RGB[0], RGB[1], RGB[2])
-	// 	img.Set(x, y, color.NRGBA{
-	// 		R: B,
-	// 		G: G,
-	// 		B: R,
-	// 		A: 255,
-	// 	})
-
-	// 	// debugf.WriteString(fmt.Sprintf("%d: %02x %02x %02x \n", y, RGB[0], RGB[1], RGB[2]))
-
-	// 	x++
-	// 	if x == 800 {
-	// 		x = 0
-	// 		y++
-	// 	}
-	// 	if y == 600 {
-	// 		break
-	// 	}
-	// }
-
-	// log.Printf("took %s to process that", time.Since(bench).String())
-
-	// a, _ := os.Create("lol.png")
-	// png.Encode(a, img)
-
-	log.Printf("Going to sleep, bye")
-	time.Sleep(time.Hour)
-
 }
 
 type usbControlPacket struct {
