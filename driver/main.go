@@ -74,29 +74,39 @@ func main() {
 		time.Sleep(time.Second)
 		os.Exit(0)
 	} else if *stage2 {
-		buf := make([]byte, 64)
-		_, err = dev.Control(0xc0, 185, 0x0021, 0, buf)
 
-		log.Printf("Setting the FPGA bitstream I think...")
+		dev.ControlTimeout = time.Second
+		Bench := time.Now()
+		inBuf := make([]byte, 12)
+		dev.Control(0xc0, 177, 0, 0, inBuf)
+		dev.ControlTimeout = time.Hour
 
-		for n, packet := range fpgaInit {
-			if n%60 == 0 {
-				thrd := len(fpgaInit) / 4
-				switch n / thrd {
-				case 0:
-					fmt.Print("F")
-				case 1:
-					fmt.Print("P")
-				case 2:
-					fmt.Print("G")
-				case 3:
-					fmt.Print("A")
+		if time.Since(Bench) > time.Second ||
+			(inBuf[0] == 0x00 && inBuf[1] == 0x00 && inBuf[2] == 0x00 && inBuf[3] == 0x00) {
+			buf := make([]byte, 64)
+			_, err = dev.Control(0xc0, 185, 0x0021, 0, buf)
+
+			log.Printf("Setting the FPGA bitstream I think...")
+
+			for n, packet := range fpgaInit {
+				if n%60 == 0 {
+					thrd := len(fpgaInit) / 4
+					switch n / thrd {
+					case 0:
+						fmt.Print("F")
+					case 1:
+						fmt.Print("P")
+					case 2:
+						fmt.Print("G")
+					case 3:
+						fmt.Print("A")
+					}
 				}
-			}
 
-			_, err = dev.Control(packet.RequestType, packet.BRequest, packet.WValue, packet.WIndex, packet.Data)
-			if err != nil {
-				log.Printf("\nfailed to bitstream %s", err.Error())
+				_, err = dev.Control(packet.RequestType, packet.BRequest, packet.WValue, packet.WIndex, packet.Data)
+				if err != nil {
+					log.Printf("\nfailed to bitstream %s", err.Error())
+				}
 			}
 		}
 
@@ -111,7 +121,7 @@ func main() {
 	log.Printf("Setting FPGA registers I think?...")
 
 	for n, packet := range frameSetup {
-		if n%60 == 0 {
+		if n%4 == 0 {
 			thrd := len(frameSetup) / 4
 			switch n / thrd {
 			case 0:
@@ -173,135 +183,137 @@ func main() {
 
 	// now to send what i think activates this
 
-	f, _ := os.Create("./debug")
 	bytesRead := 0
 
 	//                                  "\x04\x10\x00\x00\x08\x14\x04\x9e\x9f\x9e\x1f\x1f\x1f\x03\x03\x20\x00\xc8\x00\x01\x00\xc8\x00\x98\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x00\xc8"
 	//	                                "\x04\x10\x00\x00\x08\x14\x04\x9b\x9e\x9e\x1f\x1f\x1f\x03\x03\x20\x02\x58\x00\x01\x02\x58\x00\x7c\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x02\x58"
 
 	// dev.Control(0x40, 176, 0, 0, []byte("\x04\x10\x00\x00\x08\x14\x1c\xba\xba\xbb\x1f\x1f\x1f\x03\x03\x20\x02\x58\x00\x01\x02\x58\x00\x98\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x02\x58"))
-	dev.Control(0x40, 176, 0, 0, []byte("\x04\x10\x00\x00\x08\x14\x1c\x90\x91\x91\x1f\x1f\x1f\x03\x03\x20\x02\x58\x00\x01\x02\x58\x00\x7c\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x02\x58"))
-	dev.Control(0x40, 184, 0x0076, 0, []byte(""))
+	frameRequest := make(chan bool)
+	frameOutput := make(chan ReadSkipper)
+	go func() {
+		for {
+			<-frameRequest
 
-	PayloadB2 := make([]byte, 0)
+			dev.Control(0x40, 176, 0, 0, []byte("\x04\x10\x00\x00\x08\x14\x1c\x90\x91\x91\x1f\x1f\x1f\x03\x03\x20\x02\x58\x00\x01\x02\x58\x00\x7c\x19\x01\x01\x80\x80\x05\x00\x00\x00\x00\x00\x03\x20\x02\x58"))
+			dev.Control(0x40, 184, 0x0076, 0, []byte(""))
+
+			dataBuf := make([]byte, 1280*1024*4)
+			n, err := inputTest.Read(dataBuf)
+
+			if err != nil {
+				log.Printf("failed to read aa %s", err)
+				// continue
+			}
+
+			bytesRead += n
+
+			f, _ := os.Create("./debug")
+			f.Write(dataBuf[:n])
+			fmt.Printf("N=%d\n", n)
+
+			rSk := ReadSkipper{
+				Data:  dataBuf[:n],
+				Bread: 4,
+			}
+			fmt.Printf("Best Guess %#v\n", GuessTheRes(n))
+			frameOutput <- rSk
+
+		}
+	}()
+
+	go func() {
+		for {
+			rSk := <-frameOutput
+
+			Res := GuessTheRes(len(rSk.Data))
+			img := image.NewNRGBA(image.Rect(0, 0, Res.X, Res.Y))
+			// log.Printf("len= %d vs %d", len(PayloadB), 800*600)
+			x, y := 0, 0
+			// debugf, _ := os.Create("debug-hex")
+			// rSk := ReadSkipper{
+			// 	Data:  PayloadB,
+			// 	Bread: 4,
+			// }
+
+			bench := time.Now()
+
+			for {
+
+				RGB := rSk.ReadPixel()
+				R, G, B := color.YCbCrToRGB(RGB[0], RGB[1], RGB[2])
+				img.Set(x, y, color.NRGBA{
+					R: B,
+					G: G,
+					B: R,
+					A: 255,
+				})
+
+				// debugf.WriteString(fmt.Sprintf("%d: %02x %02x %02x \n", y, RGB[0], RGB[1], RGB[2]))
+
+				x++
+				if x == Res.X {
+					x = 0
+					y++
+				}
+				if y == Res.Y {
+					break
+				}
+			}
+
+			log.Printf("took %s to process that", time.Since(bench).String())
+
+			a, _ := os.Create(fmt.Sprintf("%d.png", time.Now().Unix()))
+			png.Encode(a, img)
+		}
+	}()
 
 	for {
-		dataBuf := make([]byte, 61440*6)
-		n, err := inputTest.Read(dataBuf)
-
-		if err != nil {
-			log.Printf("failed to read aa %s", err)
-			// continue
-		}
-
-		bytesRead += n
-
-		f.Write(dataBuf[:n])
-		tmp := dataBuf[:n]
-		PayloadB2 = append(PayloadB2, tmp...)
-		fmt.Printf("\rBytes Read: %d   ", bytesRead)
-		if bytesRead == 1449482 {
-			break
-		}
+		time.Sleep(time.Second)
+		frameRequest <- true
 	}
 
 	// Now a vauge attempt to reconstruct into a image?
 	// 01 30 01 00
-	PayloadB := PayloadB2
-	img := image.NewNRGBA(image.Rect(0, 0, 800, 600))
-	log.Printf("len= %d vs %d", len(PayloadB), 800*600)
-	x, y := 0, 0
-	// debugf, _ := os.Create("debug-hex")
+	// PayloadB := PayloadB2
+	// img := image.NewNRGBA(image.Rect(0, 0, 800, 600))
+	// log.Printf("len= %d vs %d", len(PayloadB), 800*600)
+	// x, y := 0, 0
+	// // debugf, _ := os.Create("debug-hex")
+	// rSk := ReadSkipper{
+	// 	Data:  PayloadB,
+	// 	Bread: 4,
+	// }
 
-	// bread := 0
+	// bench := time.Now()
 
-	rSk := ReadSkipper{
-		Data:  PayloadB,
-		Bread: 4,
-	}
+	// for {
 
-	bench := time.Now()
-
-	for {
-
-		RGB := rSk.ReadPixel()
-		R, G, B := color.YCbCrToRGB(RGB[0], RGB[1], RGB[2])
-		img.Set(x, y, color.NRGBA{
-			R: B,
-			G: G,
-			B: R,
-			A: 255,
-		})
-
-		// debugf.WriteString(fmt.Sprintf("%d: %02x %02x %02x \n", y, RGB[0], RGB[1], RGB[2]))
-
-		x++
-		if x == 800 {
-			x = 0
-			y++
-		}
-		if y == 600 {
-			break
-		}
-	}
-
-	log.Printf("took %s to process that", time.Since(bench).String())
-	// for n := 3; n < len(PayloadB); n = n + 3 {
-	// 	if n+3 > len(PayloadB) {
-	// 		break
-	// 	}
-
-	// 	// for i := 0; i < 3; i++ {
+	// 	RGB := rSk.ReadPixel()
+	// 	R, G, B := color.YCbCrToRGB(RGB[0], RGB[1], RGB[2])
 	// 	img.Set(x, y, color.NRGBA{
-	// 		R: PayloadB[n],
-	// 		G: PayloadB[n+1],
-	// 		B: PayloadB[n+2],
+	// 		R: B,
+	// 		G: G,
+	// 		B: R,
 	// 		A: 255,
 	// 	})
 
-	// 	if PayloadB[n] != 0x80 {
-	// 		debugf.WriteString(fmt.Sprintf("abormal read, Expected 80 got %02x at n=%d bread=%d\n", PayloadB[n], n, bread))
-	// 	}
+	// 	// debugf.WriteString(fmt.Sprintf("%d: %02x %02x %02x \n", y, RGB[0], RGB[1], RGB[2]))
 
-	// 	if PayloadB[n+1] != 0x80 {
-	// 		debugf.WriteString(fmt.Sprintf("abormal read, Expected 80 got %02x at n=%d bread=%d\n", PayloadB[n+1], n+1, bread+1))
-	// 	}
-
-	// 	if PayloadB[n+2] != 0xff {
-	// 		debugf.WriteString(fmt.Sprintf("abormal read, Expected ff got %02x at n=%d bread=%d\n", PayloadB[n+2], n+2, bread+2))
-	// 	}
-
-	// 	debugf.WriteString(fmt.Sprintf("%d: %02x (%d) %02x (%d) %02x (%d) [%d]\n", n, PayloadB[n], n, PayloadB[n+1], n+1, PayloadB[n+2], n+2, bread))
 	// 	x++
-	// 	if x == 799 {
+	// 	if x == 800 {
 	// 		x = 0
 	// 		y++
 	// 	}
-	// 	bread += 3
-	// }
-	// for n, _ := range PayloadB {
-	// if n == len(PayloadB)-3 {
-	// 	break
+	// 	if y == 600 {
+	// 		break
+	// 	}
 	// }
 
-	// // for i := 0; i < 3; i++ {
-	// img.Set(x, y, color.NRGBA{
-	// 	R: PayloadB[n],
-	// 	G: PayloadB[n+1],
-	// 	B: PayloadB[n+2],
-	// 	A: 255,
-	// })
-	// x++
-	// if x == 799 {
-	// 	x = 0
-	// 	y++
-	// }
-	// // }
+	// log.Printf("took %s to process that", time.Since(bench).String())
 
-	// }
-
-	a, _ := os.Create("lol.png")
-	png.Encode(a, img)
+	// a, _ := os.Create("lol.png")
+	// png.Encode(a, img)
 
 	log.Printf("Going to sleep, bye")
 	time.Sleep(time.Hour)
@@ -328,18 +340,8 @@ func (r *ReadSkipper) ReadPixel() [3]byte {
 	var output [3]byte
 
 	output[0] = r.readByte()
-	if output[0] != 0xff && debug {
-		fmt.Printf("Abormal read on R: %02x [%d]\n", output[0], r.Bread)
-	}
 	output[1] = r.readByte()
-	if output[1] != 0x80 && debug {
-		fmt.Printf("Abormal read on G: %02x [%d]\n", output[1], r.Bread)
-	}
 	output[2] = r.readByte()
-	if output[2] != 0x80 && debug {
-		fmt.Printf("Abormal read on B: %02x [%d]\n", output[2], r.Bread)
-	}
-
 	return output
 }
 
