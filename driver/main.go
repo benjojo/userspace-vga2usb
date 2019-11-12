@@ -14,6 +14,8 @@ import (
 	"github.com/google/gousb"
 )
 
+var debugLogging = flag.Bool("debug", false, "Enable debug output")
+
 func main() {
 	stage1 := flag.Bool("stage1", false, "USB mode")
 	stage2 := flag.Bool("stage2", false, "FPGA mode and run time")
@@ -25,46 +27,54 @@ func main() {
 	ctx := gousb.NewContext()
 	defer ctx.Close()
 
-	log.Printf("Opening device...")
+	if *debugLogging {
+		log.Printf("Opening device...")
+	}
 
 	dev, err := ctx.OpenDeviceWithVIDPID(0x5555, 0x3382)
-	if err != nil {
+	if err != nil || dev == nil {
 		log.Fatalf("Could not open a device: %v", err)
 	}
-	defer dev.Close()
 
-	log.Printf("Claim default interface...")
+	if *debugLogging {
+		log.Printf("Claim default interface...")
+	}
 
 	deviceConfig, err := dev.Config(1)
 	if err != nil {
 		log.Printf("Failed to get config for device")
 		return
 	}
+	defer dev.Close()
 
-	for num, interf := range deviceConfig.Desc.Interfaces {
-		os.Stderr.WriteString(fmt.Sprintf("\tINTERFACE #%d\n", num))
+	if *debugLogging {
+		for num, interf := range deviceConfig.Desc.Interfaces {
+			os.Stderr.WriteString(fmt.Sprintf("\tINTERFACE #%d\n", num))
 
-		for numAlt, altset := range interf.AltSettings {
-			os.Stderr.WriteString(fmt.Sprintf("\t\t%d - Number: %d - Alt %d\n", numAlt, altset.Number, altset.Alternate))
-			for numEndpoint, endpointset := range altset.Endpoints {
-				os.Stderr.WriteString(fmt.Sprintf("\t\t\t%d - %#v\n", numEndpoint, endpointset))
+			for numAlt, altset := range interf.AltSettings {
+				os.Stderr.WriteString(fmt.Sprintf("\t\t%d - Number: %d - Alt %d\n", numAlt, altset.Number, altset.Alternate))
+				for numEndpoint, endpointset := range altset.Endpoints {
+					os.Stderr.WriteString(fmt.Sprintf("\t\t\t%d - %#v\n", numEndpoint, endpointset))
+				}
 			}
 		}
 	}
 
 	if *stage1 {
-		log.Printf("Setting the USB Controller firmware I think...")
+		log.Printf("Setting the USB Controller firmware")
 
 		for n, packet := range usbInit {
-			if n%10 == 0 {
-				thrd := len(usbInit) / 3
-				switch n / thrd {
-				case 0:
-					os.Stderr.WriteString(fmt.Sprintf("U"))
-				case 1:
-					os.Stderr.WriteString(fmt.Sprintf("S"))
-				case 2:
-					os.Stderr.WriteString(fmt.Sprintf("B"))
+			if *debugLogging {
+				if n%10 == 0 {
+					thrd := len(usbInit) / 3
+					switch n / thrd {
+					case 0:
+						os.Stderr.WriteString(fmt.Sprintf("U"))
+					case 1:
+						os.Stderr.WriteString(fmt.Sprintf("S"))
+					case 2:
+						os.Stderr.WriteString(fmt.Sprintf("B"))
+					}
 				}
 			}
 
@@ -74,6 +84,7 @@ func main() {
 			}
 		}
 
+		log.Printf("Set the USB Controller firmware")
 		time.Sleep(time.Second)
 		os.Exit(0)
 	} else if *stage2 {
@@ -92,17 +103,19 @@ func main() {
 			log.Printf("Setting the FPGA bitstream I think...")
 
 			for n, packet := range fpgaInit {
-				if n%60 == 0 {
-					thrd := len(fpgaInit) / 4
-					switch n / thrd {
-					case 0:
-						os.Stderr.WriteString(fmt.Sprintf("F"))
-					case 1:
-						os.Stderr.WriteString(fmt.Sprintf("P"))
-					case 2:
-						os.Stderr.WriteString(fmt.Sprintf("G"))
-					case 3:
-						os.Stderr.WriteString(fmt.Sprintf("A"))
+				if *debugLogging {
+					if n%60 == 0 {
+						thrd := len(fpgaInit) / 4
+						switch n / thrd {
+						case 0:
+							os.Stderr.WriteString(fmt.Sprintf("F"))
+						case 1:
+							os.Stderr.WriteString(fmt.Sprintf("P"))
+						case 2:
+							os.Stderr.WriteString(fmt.Sprintf("G"))
+						case 3:
+							os.Stderr.WriteString(fmt.Sprintf("A"))
+						}
 					}
 				}
 
@@ -117,24 +130,30 @@ func main() {
 		log.Fatalf("Set a -stage1 or -stage2")
 	}
 
-	os.Stderr.WriteString(fmt.Sprintf("\r\n"))
-	log.Printf("Activating in 2 seconds")
-	time.Sleep(time.Second * 2)
+	if *debugLogging {
+		os.Stderr.WriteString(fmt.Sprintf("\r\n"))
+		log.Printf("Activating in 2 seconds")
+	}
+	time.Sleep(time.Second * 1)
 
-	log.Printf("Setting FPGA registers I think?...")
+	if *debugLogging {
+		log.Printf("Setting FPGA registers I think?...")
+	}
 
 	for n, packet := range frameSetup {
-		if n%4 == 0 {
-			thrd := len(frameSetup) / 4
-			switch n / thrd {
-			case 0:
-				os.Stderr.WriteString(fmt.Sprintf("W"))
-			case 1:
-				os.Stderr.WriteString(fmt.Sprintf("O"))
-			case 2:
-				os.Stderr.WriteString(fmt.Sprintf("R"))
-			case 3:
-				os.Stderr.WriteString(fmt.Sprintf("K"))
+		if *debugLogging {
+			if n%4 == 0 {
+				thrd := len(frameSetup) / 4
+				switch n / thrd {
+				case 0:
+					os.Stderr.WriteString(fmt.Sprintf("W"))
+				case 1:
+					os.Stderr.WriteString(fmt.Sprintf("O"))
+				case 2:
+					os.Stderr.WriteString(fmt.Sprintf("R"))
+				case 3:
+					os.Stderr.WriteString(fmt.Sprintf("K"))
+				}
 			}
 		}
 
@@ -148,26 +167,33 @@ func main() {
 	if err != nil {
 		log.Fatalf("Kaboom, unable to grab Config(1): %s", err.Error())
 	}
-	os.Stderr.WriteString(fmt.Sprintf("Config: "))
+	if *debugLogging {
+		os.Stderr.WriteString(fmt.Sprintf("Config: "))
+	}
 
 	defaultinterface, err := cfg.Interface(0, 0)
 	if err != nil {
 		log.Fatalf("Kaboom, unable to grab Interface(0, 0): %s", err.Error())
 	}
-	os.Stderr.WriteString(fmt.Sprintf("Interface: "))
+	if *debugLogging {
+		os.Stderr.WriteString(fmt.Sprintf("Interface: "))
+	}
 
 	inputTest, err := defaultinterface.InEndpoint(2)
 	if err != nil {
 		log.Fatalf("Kaboom, unable to grab default interface: %s", err.Error())
 	}
-
-	os.Stderr.WriteString(fmt.Sprintf("Endpoint: "))
+	if *debugLogging {
+		os.Stderr.WriteString(fmt.Sprintf("Endpoint: "))
+	}
 
 	inBuf := make([]byte, 12)
 	_, err = dev.Control(0xc0, 177, 0, 0, inBuf)
 	os.Stderr.WriteString(fmt.Sprintf("Grab In 12 Control: \n"))
 
-	log.Printf("Here is a blob that I don't know what it does %x", inBuf)
+	if *debugLogging {
+		log.Printf("Here is a EDID blob I think? %x", inBuf)
+	}
 
 	// now to send what i think activates this
 
@@ -249,11 +275,13 @@ func main() {
 				}
 			}
 
-			log.Printf("took %s to process that", time.Since(bench).String())
-
 			if !*mjpegMode {
 				a, _ := os.Create(fmt.Sprintf("%d.png", time.Now().Unix()))
 				png.Encode(a, img)
+
+				if *debugLogging {
+					log.Printf("took %s to process that", time.Since(bench).String())
+				}
 				continue
 			}
 
@@ -263,6 +291,10 @@ func main() {
 
 			os.Stdout.WriteString("\n--myboundary\nContent-Type: image/jpeg\n\n")
 			jpeg.Encode(os.Stdout, img, nil)
+
+			if *debugLogging {
+				log.Printf("took %s to process that", time.Since(bench).String())
+			}
 
 		}
 	}()
