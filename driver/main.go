@@ -319,8 +319,6 @@ type ReadSkipper struct {
 	Bread int
 }
 
-var debug = false
-
 func (r *ReadSkipper) ReadPixel() [3]byte {
 	var output [3]byte
 

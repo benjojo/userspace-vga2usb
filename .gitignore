@@ -1,2 +1,8 @@
+decompress-avi/decompress-avi
 /.GOPATH
 /bin
+*.csv
+*.pcap
+*.pcapng
+*.pcapng.*
+utils/tcpdump-to-arrays/tcpdump-to-arrays

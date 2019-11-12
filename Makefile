@@ -13,6 +13,7 @@ all: build
 
 .PHONY: build
 build: .GOPATH/.ok
+	$Q go get $(if $V,-v) $(VERSION_FLAGS) github.com/FiloSottile/gvt
 	$Q go install $(if $V,-v) $(VERSION_FLAGS) github.com/FiloSottile/gvt
 	$Q go install $(if $V,-v) $(VERSION_FLAGS) $(IMPORT_PATH)/driver
 	$Q go test $(if $V,-v) $(VERSION_FLAGS) $(IMPORT_PATH)/driver
