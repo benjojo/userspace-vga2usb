@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"image"
@@ -22,6 +23,7 @@ func main() {
 	resMode := flag.Int("resMode", 1, "1: 800*600, 2: 1024x768, 3: 1280x720")
 	fps := flag.Int("fps", 2, "FPS you want to try and capture at")
 	mjpegMode := flag.Bool("mjpeg", false, "output MJPEG so it can be processed by another program")
+	webserver := flag.Bool("web", false, "if set, will start a webserver on 3723 with liveview and HTML5 recording")
 	flag.Parse()
 
 	ctx := gousb.NewContext()
@@ -244,6 +246,11 @@ func main() {
 		os.Stdout.WriteString("--myboundary\nContent-Type: image/jpeg\n\n")
 	}
 
+	pngPipe := make(chan []byte)
+	if *webserver {
+		go startWebserver(pngPipe)
+	}
+
 	go func() {
 		for {
 			rSk := <-frameOutput
@@ -276,12 +283,30 @@ func main() {
 			}
 
 			if !*mjpegMode {
-				a, _ := os.Create(fmt.Sprintf("%d.png", time.Now().Unix()))
-				png.Encode(a, img)
+
+				if *webserver {
+					var tmpBuffer bytes.Buffer
+					err := png.Encode(&tmpBuffer, img)
+					if err != nil {
+						log.Printf("failed to encode PNG %s", err.Error())
+						continue
+					}
+
+					if *debugLogging {
+						log.Printf("Send a buf of len %d down pngPipe", tmpBuffer.Len())
+					}
+
+					pngPipe <- tmpBuffer.Bytes()
+
+				} else {
+					a, _ := os.Create(fmt.Sprintf("%d.png", time.Now().Unix()))
+					png.Encode(a, img)
+				}
 
 				if *debugLogging {
 					log.Printf("took %s to process that", time.Since(bench).String())
 				}
+
 				continue
 			}
 
