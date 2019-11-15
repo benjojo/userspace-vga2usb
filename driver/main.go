@@ -199,7 +199,6 @@ func main() {
 
 	// now to send what i think activates this
 
-	bytesRead := 0
 	frameRequest := make(chan bool)
 	frameOutput := make(chan ReadSkipper, 1)
 	go func() {
@@ -226,19 +225,16 @@ func main() {
 				// continue
 			}
 
-			bytesRead += n
-
-			f, _ := os.Create("./debug")
-			f.Write(dataBuf[:n])
-			// os.Stderr.WriteString(fmt.Sprintf("N=%d\n", n))
-
+			if *debugLogging {
+				f, _ := os.Create("./debug")
+				f.Write(dataBuf[:n])
+				os.Stderr.WriteString(fmt.Sprintf("N=%d\n", n))
+			}
 			rSk := ReadSkipper{
 				Data:  dataBuf[:n],
 				Bread: 4,
 			}
-			// log.Printf("Best Guess %#v\n", GuessTheRes(n))
 			frameOutput <- rSk
-
 		}
 	}()
 
