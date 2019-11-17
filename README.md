@@ -5,4 +5,4 @@ This is a userspace driver that uses libusb to replace some of the basic functio
 
 ![Device](https://blog.benjojo.co.uk/asset/HxOiDPsE83)
 
-You can find a better write up on the process of writing this here: 
+You can find a better write up on the process of writing this here: https://blog.benjojo.co.uk/post/userspace-usb-drivers
