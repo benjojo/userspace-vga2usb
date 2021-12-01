@@ -1,0 +1,6 @@
+# github.com/google/gousb v0.0.0-20190812193832-18f4c1d8a750
+## explicit
+github.com/google/gousb
+# golang.org/x/net v0.0.0-20191112182307-2180aed22343
+## explicit; go 1.11
+golang.org/x/net/websocket
